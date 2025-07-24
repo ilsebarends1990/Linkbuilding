@@ -1,0 +1,23 @@
+[
+  {
+    "website_url": "https://www.allincv.nl",
+    "page_id": 49,
+    "username": "info@drijfveermedia.nl",
+    "app_password": "XXEaNPwdaX4T7MblMyC7d5Q0",
+    "site_name": "AllInCV Test"
+  },
+  {
+    "website_url": "https://website2.nl",
+    "page_id": 25,
+    "username": "admin@website2.nl",
+    "app_password": "yyyy yyyy yyyy yyyy yyyy yyyy",
+    "site_name": "Website 2"
+  },
+  {
+    "website_url": "https://website3.nl",
+    "page_id": 30,
+    "username": "info@website3.nl",
+    "app_password": "zzzz zzzz zzzz zzzz zzzz zzzz",
+    "site_name": "Website 3"
+  }
+]

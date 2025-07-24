@@ -1,0 +1,19 @@
+{
+  "name": "wordpress-link-manager",
+  "version": "1.0.0",
+  "description": "WordPress Link Management System with FastAPI backend and React frontend",
+  "scripts": {
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "start:frontend": "cd drijfveer-dashboard && npm run dev",
+    "install:all": "cd backend && pip install -r requirements.txt && cd ../drijfveer-dashboard && npm install",
+    "build:frontend": "cd drijfveer-dashboard && npm run build",
+    "dev": "npm run start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": ["wordpress", "link-management", "fastapi", "react", "bulk-import"],
+  "author": "Drijfveer Media",
+  "license": "MIT"
+}

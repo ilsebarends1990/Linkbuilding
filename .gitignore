@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+*/.env
+*/.env.local
+*/.env.production
+*/.env.development
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+logs/
+bulk_links.log
+bulk_results.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel
+
+# Temporary files
+*.tmp
+*.temp
+
+# Sensitive data (keep these local only)
+websites_config.csv
+api/.env
+
+# Keep the JSON config but it will be overridden by environment variables in production
+# websites_config.json
