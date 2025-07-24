@@ -1,6 +1,20 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/(.*)", "dest": "/index.py" }
+    {
+      "src": "/(.*)",
+      "dest": "/index.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "https://linkbuilding-kohl.vercel.app",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Credentials": "true"
+      }
+    },
+    {
+      "src": "/.*",
+      "methods": ["OPTIONS"],
+      "dest": "/index.py"
+    }
   ]
 }
