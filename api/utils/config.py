@@ -31,26 +31,50 @@ class WebsiteConfig:
 
 def load_websites_config() -> List[WebsiteConfig]:
     """
-    Load website configuration from environment variable (production) or JSON file (development)
+    Load website configuration - hardcoded for reliable Vercel deployment
     """
+    logger.info("Loading hardcoded website configuration")
+    
+    # Hardcoded website configurations for reliable deployment
+    websites_data = [
+        {
+            "website_url": "https://www.allincv.nl",
+            "page_id": 49,
+            "username": "admin",
+            "app_password": "XXEaNPwdaX4T7MblMyC7d5Q0",
+            "site_name": "www.allincv.nl"
+        },
+        {
+            "website_url": "https://www.aluminiumbedrijf.nl",
+            "page_id": 142,
+            "username": "admin",
+            "app_password": "I53V VPj9 Z14Y lJfd jlkZ SrOJ",
+            "site_name": "www.aluminiumbedrijf.nl"
+        },
+        {
+            "website_url": "https://www.am-team.nl",
+            "page_id": 7,
+            "username": "admin",
+            "app_password": "8EY7 Iiuj TZ4h ys2z Rfx8 1Ywd",
+            "site_name": "www.am-team.nl"
+        },
+        {
+            "website_url": "https://www.asbestcrew.nl",
+            "page_id": 325,
+            "username": "testwebsite3",
+            "app_password": "8Gfs S3Nb GB3l 55RG dB40 DUZk",
+            "site_name": "www.asbestcrew.nl"
+        },
+        {
+            "website_url": "https://www.ashbyhoveniersbedrijf.nl",
+            "page_id": 13025,
+            "username": "v3xmt0",
+            "app_password": "yjcf LmWn 5T62 iCte QJYv qn2T",
+            "site_name": "www.ashbyhoveniersbedrijf.nl"
+        }
+    ]
+    
     try:
-        # Check if running in Vercel (production)
-        if os.environ.get("VERCEL_ENV"):
-            logger.info("Loading config from environment variable (Vercel)")
-            config_json = os.environ.get("WEBSITES_CONFIG", "[]")
-            websites_data = json.loads(config_json)
-        else:
-            # Local development - use JSON file
-            logger.info("Loading config from local JSON file")
-            config_path = Path(__file__).parent.parent / "data" / "websites_config.json"
-            
-            if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    websites_data = json.load(f)
-            else:
-                logger.warning(f"Config file {config_path} not found, using empty config")
-                websites_data = []
-        
         # Convert to WebsiteConfig objects
         websites = []
         for data in websites_data:
@@ -66,18 +90,34 @@ def load_websites_config() -> List[WebsiteConfig]:
         logger.info(f"✅ Loaded {len(websites)} website configurations")
         return websites
         
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ Invalid JSON in config: {e}")
-        return []
     except Exception as e:
         logger.error(f"❌ Error loading config: {e}")
         return []
 
 def get_website_config(website_url: str, websites: List[WebsiteConfig]) -> Optional[WebsiteConfig]:
-    """Get website configuration by URL"""
+    """Get website configuration by URL with intelligent matching"""
+    if not website_url:
+        return None
+    
+    # First try exact match
     for config in websites:
         if config.website_url == website_url:
             return config
+    
+    # Then try root domain matching
+    try:
+        from urllib.parse import urlparse
+        input_domain = urlparse(website_url.lower()).netloc.replace('www.', '')
+        
+        for config in websites:
+            config_domain = urlparse(config.website_url.lower()).netloc.replace('www.', '')
+            if input_domain == config_domain:
+                logger.info(f"🔗 URL matched via domain: {website_url} -> {config.website_url}")
+                return config
+    except Exception as e:
+        logger.warning(f"⚠️ Error in URL matching for {website_url}: {e}")
+    
+    logger.warning(f"❌ No website configuration found for: {website_url}")
     return None
 
 def save_websites_config(websites: List[WebsiteConfig]) -> bool:

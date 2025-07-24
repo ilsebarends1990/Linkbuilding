@@ -28,7 +28,7 @@ class LinkResponse:
             'link_added': self.link_added
         }
 
-def add_link_to_wordpress(config, anchor_text: str, link_url: str, page_id: int = None, timeout: int = 30) -> LinkResponse:
+def add_link_to_wordpress(config, anchor_text: str, link_url: str, page_id: int = None, timeout: int = 60) -> LinkResponse:
     """
     Add a link to a WordPress page via REST API
     """
@@ -120,7 +120,7 @@ def add_link_to_wordpress(config, anchor_text: str, link_url: str, page_id: int 
             page_id=target_page_id
         )
 
-def test_wordpress_connection(config, timeout: int = 10) -> Dict[str, Any]:
+def test_wordpress_connection(config, timeout: int = 60) -> Dict[str, Any]:
     """
     Test connection to WordPress site
     """

@@ -110,7 +110,7 @@ config_source: str = "unknown"  # Track where config was loaded from
 config_loaded_at: str = ""  # Track when config was loaded
 
 def load_websites_config():
-    """Load website configuration from JSON files, environment variables, or CSV file"""
+    """Load website configuration - hardcoded for reliable Vercel deployment"""
     global websites_config, config_source, config_loaded_at
     websites_config = []
     config_loaded_at = datetime.now().isoformat()
@@ -124,146 +124,66 @@ def load_websites_config():
     environment = 'production' if is_production else 'development'
     logger.info(f"🌍 Detected environment: {environment} (VERCEL={os.getenv('VERCEL')}, NODE_ENV={os.getenv('NODE_ENV')}, VERCEL_ENV={os.getenv('VERCEL_ENV')})")
     
-    # First priority: JSON configuration files
-    config_dir = Path(__file__).parent.parent / "config"
-    json_config_file = config_dir / f"websites_{environment}.json"
+    # Hardcoded website configurations for reliable deployment
+    hardcoded_websites = [
+        {
+            "website_url": "https://www.allincv.nl",
+            "page_id": 49,
+            "username": "admin",
+            "app_password": "XXEaNPwdaX4T7MblMyC7d5Q0",
+            "site_name": "www.allincv.nl"
+        },
+        {
+            "website_url": "https://www.aluminiumbedrijf.nl",
+            "page_id": 142,
+            "username": "admin",
+            "app_password": "I53V VPj9 Z14Y lJfd jlkZ SrOJ",
+            "site_name": "www.aluminiumbedrijf.nl"
+        },
+        {
+            "website_url": "https://www.am-team.nl",
+            "page_id": 7,
+            "username": "admin",
+            "app_password": "8EY7 Iiuj TZ4h ys2z Rfx8 1Ywd",
+            "site_name": "www.am-team.nl"
+        },
+        {
+            "website_url": "https://www.asbestcrew.nl",
+            "page_id": 325,
+            "username": "testwebsite3",
+            "app_password": "8Gfs S3Nb GB3l 55RG dB40 DUZk",
+            "site_name": "www.asbestcrew.nl"
+        },
+        {
+            "website_url": "https://www.ashbyhoveniersbedrijf.nl",
+            "page_id": 13025,
+            "username": "v3xmt0",
+            "app_password": "yjcf LmWn 5T62 iCte QJYv qn2T",
+            "site_name": "www.ashbyhoveniersbedrijf.nl"
+        }
+    ]
     
-    # Try environment-specific JSON file first
-    logger.info(f"📁 Looking for JSON config: {json_config_file}")
-    if json_config_file.exists():
-        try:
-            with open(json_config_file, 'r', encoding='utf-8') as file:
-                websites_data = json.load(file)
-                missing_page_ids = 0
-                for website_data in websites_data:
-                    # Validate page_id
-                    if website_data['page_id'] == 0 or not website_data['page_id']:
-                        missing_page_ids += 1
-                        logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
-                    
-                    websites_config.append(WebsiteConfig(
-                        website_url=website_data['website_url'],
-                        page_id=website_data['page_id'],
-                        username=website_data['username'],
-                        app_password=website_data['app_password'],
-                        site_name=website_data['site_name']
-                    ))
-                config_source = f"json_file_{environment}"
-                logger.info(f"✅ {len(websites_config)} websites loaded from {json_config_file}")
-                if missing_page_ids > 0:
-                    logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
-                return True
-        except Exception as e:
-            logger.error(f"❌ Error loading from JSON config file {json_config_file}: {e}")
+    # Load hardcoded configurations
+    missing_page_ids = 0
+    for website_data in hardcoded_websites:
+        # Validate page_id
+        if website_data['page_id'] == 0 or not website_data['page_id']:
+            missing_page_ids += 1
+            logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
+        
+        websites_config.append(WebsiteConfig(
+            website_url=website_data['website_url'],
+            page_id=website_data['page_id'],
+            username=website_data['username'],
+            app_password=website_data['app_password'],
+            site_name=website_data['site_name']
+        ))
     
-    # Fallback to legacy websites_config.json
-    legacy_json_file = Path(__file__).parent.parent / "websites_config.json"
-    if legacy_json_file.exists():
-        try:
-            with open(legacy_json_file, 'r', encoding='utf-8') as file:
-                websites_data = json.load(file)
-                missing_page_ids = 0
-                for website_data in websites_data:
-                    # Validate page_id
-                    if website_data['page_id'] == 0 or not website_data['page_id']:
-                        missing_page_ids += 1
-                        logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
-                    
-                    websites_config.append(WebsiteConfig(
-                        website_url=website_data['website_url'],
-                        page_id=website_data['page_id'],
-                        username=website_data['username'],
-                        app_password=website_data['app_password'],
-                        site_name=website_data['site_name']
-                    ))
-                config_source = "json_file_legacy"
-                logger.info(f"✅ {len(websites_config)} websites loaded from legacy JSON file")
-                if missing_page_ids > 0:
-                    logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
-                return True
-        except Exception as e:
-            logger.error(f"❌ Error loading from legacy JSON config file: {e}")
-    
-    # Second priority: Environment variables (for backward compatibility)
-    # Try regular JSON string first
-    env_config = os.getenv('WEBSITES_CONFIG')
-    env_source = "environment_variables"
-    
-    # If not found, try base64 encoded version (for larger configs)
-    if not env_config:
-        base64_config = os.getenv('WEBSITES_CONFIG_BASE64')
-        if base64_config:
-            try:
-                env_config = base64.b64decode(base64_config).decode('utf-8')
-                env_source = "environment_variables_base64"
-                logger.info("📦 Using base64 decoded configuration")
-            except Exception as e:
-                logger.error(f"❌ Error decoding base64 configuration: {e}")
-    
-    if env_config:
-        try:
-            websites_data = json.loads(env_config)
-            missing_page_ids = 0
-            for website_data in websites_data:
-                # Validate page_id
-                if website_data['page_id'] == 0 or not website_data['page_id']:
-                    missing_page_ids += 1
-                    logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
-                
-                websites_config.append(WebsiteConfig(
-                    website_url=website_data['website_url'],
-                    page_id=website_data['page_id'],
-                    username=website_data['username'],
-                    app_password=website_data['app_password'],
-                    site_name=website_data['site_name']
-                ))
-            config_source = env_source
-            logger.info(f"✅ {len(websites_config)} websites loaded from {env_source}")
-            if missing_page_ids > 0:
-                logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
-            return True
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Error parsing WEBSITES_CONFIG environment variable: {e}")
-        except KeyError as e:
-            logger.error(f"❌ Missing required field in WEBSITES_CONFIG: {e}")
-        except Exception as e:
-            logger.error(f"❌ Error loading from environment variables: {e}")
-    
-    # Last fallback: CSV file (for development)
-    config_file = Path(__file__).parent.parent / "websites_config.csv"
-    try:
-        with open(config_file, 'r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            missing_page_ids = 0
-            for row in reader:
-                if row['website_url'].strip():  # Skip empty rows
-                    page_id = int(row['page_id'])
-                    
-                    # Validate page_id
-                    if page_id == 0:
-                        missing_page_ids += 1
-                        logger.warning(f"⚠️ Missing page_id for {row['website_url'].strip()}")
-                    
-                    websites_config.append(WebsiteConfig(
-                        website_url=row['website_url'].strip(),
-                        page_id=page_id,
-                        username=row['username'].strip(),
-                        app_password=row['app_password'].strip(),
-                        site_name=row['site_name'].strip()
-                    ))
-        config_source = "csv_file"
-        logger.info(f"✅ {len(websites_config)} websites loaded from CSV file")
-        if missing_page_ids > 0:
-            logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
-        return True
-    except FileNotFoundError:
-        config_source = "not_found"
-        logger.error(f"❌ No configuration found! Tried JSON files, environment variables, and CSV file.")
-        return False
-    except Exception as e:
-        config_source = "error"
-        logger.error(f"❌ Error loading config: {e}")
-        return False
+    config_source = f"hardcoded_{environment}"
+    logger.info(f"✅ {len(websites_config)} websites loaded from hardcoded configuration")
+    if missing_page_ids > 0:
+        logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
+    return True
 
 def get_website_config(website_url: str) -> Optional[WebsiteConfig]:
     """Get website configuration by URL with intelligent matching"""
@@ -429,18 +349,18 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         # Use provided page_id or default from config
         target_page_id = page_id or config.page_id
         
-        logger.debug(f"🔍 Attempting to add link to {config.website_url} (page {target_page_id})")
-        logger.debug(f"🔗 Link: '{anchor_text}' -> {link_url}")
+        logger.info(f"🔍 Attempting to add link to {config.website_url} (page {target_page_id})")
+        logger.info(f"🔗 Link: '{anchor_text}' -> {link_url}")
         
         # Build API URL
         api_base = f"{config.website_url.rstrip('/')}/wp-json/wp/v2"
         
         # Step 1: Get existing page content
-        logger.debug(f"📥 Fetching page content from {api_base}/pages/{target_page_id}")
+        logger.info(f"📥 Fetching page content from {api_base}/pages/{target_page_id}")
         response = requests.get(
             f"{api_base}/pages/{target_page_id}",
             auth=HTTPBasicAuth(config.username, config.app_password),
-            timeout=30
+            timeout=60
         )
         
         if response.status_code != 200:
@@ -454,7 +374,7 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
             )
         
         page_data = response.json()
-        logger.debug(f"✅ Successfully fetched page data from {config.website_url}")
+        logger.info(f"✅ Successfully fetched page data from {config.website_url}")
         
         # Get existing content (prefer raw over rendered)
         existing_content = page_data.get("content", {}).get("raw")
@@ -463,7 +383,7 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         
         # Step 2: Check if link already exists
         if str(link_url) in existing_content:
-            logger.debug(f"🔄 Link already exists on {config.website_url}")
+            logger.info(f"🔄 Link already exists on {config.website_url}")
             return LinkResponse(
                 success=True,
                 message="Link already exists",
@@ -476,7 +396,7 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         new_link = f'<a href="{link_url}">{anchor_text}</a><br>'
         new_content = existing_content + "\n" + new_link
         
-        logger.debug(f"📤 Updating page content on {config.website_url}")
+        logger.info(f"📤 Updating page content on {config.website_url}")
         
         # Step 4: Update the page
         update_response = requests.post(
@@ -484,11 +404,11 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
             auth=HTTPBasicAuth(config.username, config.app_password),
             headers={"Content-Type": "application/json"},
             json={"content": new_content},
-            timeout=30
+            timeout=60
         )
         
         if update_response.status_code == 200:
-            logger.debug(f"✅ Successfully updated page on {config.website_url}")
+            logger.info(f"✅ Successfully updated page on {config.website_url}")
             return LinkResponse(
                 success=True,
                 message="Link successfully added",
@@ -747,6 +667,58 @@ async def delete_website(website_url: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.get("/test-wordpress/{website_url:path}")
+async def test_wordpress_connection(website_url: str):
+    """Test WordPress API connection for a specific website"""
+    config = get_website_config(website_url)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Website configuration not found for {website_url}")
+    
+    try:
+        api_base = f"{config.website_url.rstrip('/')}/wp-json/wp/v2"
+        logger.info(f"🧪 Testing WordPress connection to {api_base}")
+        
+        # Test basic API connectivity
+        response = requests.get(
+            f"{api_base}/pages/{config.page_id}",
+            auth=HTTPBasicAuth(config.username, config.app_password),
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            page_data = response.json()
+            return {
+                "success": True,
+                "message": "WordPress API connection successful",
+                "website_url": config.website_url,
+                "page_id": config.page_id,
+                "page_title": page_data.get("title", {}).get("rendered", "Unknown"),
+                "status_code": response.status_code
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"WordPress API returned status {response.status_code}",
+                "website_url": config.website_url,
+                "page_id": config.page_id,
+                "status_code": response.status_code
+            }
+            
+    except requests.exceptions.Timeout:
+        return {
+            "success": False,
+            "message": "Connection timeout - WordPress site may be slow or unreachable",
+            "website_url": config.website_url,
+            "page_id": config.page_id
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Connection error: {str(e)}",
+            "website_url": config.website_url,
+            "page_id": config.page_id
+        }
 
 @app.get("/health")
 async def health_check():
