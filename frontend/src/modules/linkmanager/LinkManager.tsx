@@ -7,6 +7,7 @@ import { useWebsites, useHealthCheck } from '@/hooks/useApi'
 import { LineNumberedTextarea } from '@/components/LineNumberedTextarea'
 import { detectWebsiteFromUrl, detectPageIdFromUrl, isValidUrl, normalizeToRootDomain } from '@/utils/urlHelpers'
 import { useToast } from '@/hooks/use-toast'
+import { api } from '@/services/api'
 
 interface FormData {
   importSourceUrls: string;
@@ -62,7 +63,7 @@ export default function LinkManager() {
     if (sourceUrls.length !== anchorTexts.length || anchorTexts.length !== targetUrls.length) {
       toast({
         title: "Data mismatch",
-        description: "Alle kolommen moeten hetzelfde aantal regels hebben",
+        description: `Aantal regels komt niet overeen: Source URLs (${sourceUrls.length}), Anchor Texts (${anchorTexts.length}), Target URLs (${targetUrls.length}). Alle kolommen moeten hetzelfde aantal regels hebben.`,
         variant: "destructive"
       });
       return;
@@ -142,26 +143,20 @@ export default function LinkManager() {
       const link = parsedLinks[i];
       
       try {
-        const response = await fetch('/api/links/bulk', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            anchor_text: link.anchorText,
-            link_url: link.targetUrl,
-            website_urls: [link.website],
-            page_id: parseInt(link.pageId || '49'),
-          }),
+        const result = await api.addBulkLinks({
+          anchor_text: link.anchorText,
+          link_url: link.targetUrl,
+          website_urls: [link.website!],
+          page_id: parseInt(link.pageId || '49'),
         });
-
-        const result = await response.json();
         
+        // API returns array of LinkResponse, take first result since we send one website
+        const linkResult = result[0];
         results.push({
           link,
-          success: response.ok,
-          result: result,
-          error: response.ok ? undefined : result.detail || 'Unknown error'
+          success: linkResult.success,
+          result: linkResult,
+          error: linkResult.success ? undefined : linkResult.message
         });
 
       } catch (error) {
@@ -241,7 +236,9 @@ export default function LinkManager() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Source URLs</label>
+              <label className="text-sm font-medium">
+                Source URLs ({formData.importSourceUrls.split('\n').filter(url => url.trim()).length} regels)
+              </label>
               <LineNumberedTextarea
                 value={formData.importSourceUrls}
                 onChange={(e) => setFormData(prev => ({ ...prev, importSourceUrls: e.target.value }))}
@@ -250,7 +247,9 @@ export default function LinkManager() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Anchor Texts</label>
+              <label className="text-sm font-medium">
+                Anchor Texts ({formData.importAnchorTexts.split('\n').filter(text => text.trim()).length} regels)
+              </label>
               <LineNumberedTextarea
                 value={formData.importAnchorTexts}
                 onChange={(e) => setFormData(prev => ({ ...prev, importAnchorTexts: e.target.value }))}
@@ -259,7 +258,9 @@ export default function LinkManager() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Target URLs</label>
+              <label className="text-sm font-medium">
+                Target URLs ({formData.importTargetUrls.split('\n').filter(url => url.trim()).length} regels)
+              </label>
               <LineNumberedTextarea
                 value={formData.importTargetUrls}
                 onChange={(e) => setFormData(prev => ({ ...prev, importTargetUrls: e.target.value }))}

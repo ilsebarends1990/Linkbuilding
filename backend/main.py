@@ -116,14 +116,20 @@ def load_websites_config():
     config_loaded_at = datetime.now().isoformat()
     
     # Detect environment (production if running on Vercel, development otherwise)
-    is_production = os.getenv('VERCEL') == '1' or os.getenv('NODE_ENV') == 'production'
+    is_production = (
+        os.getenv('VERCEL') == '1' or 
+        os.getenv('NODE_ENV') == 'production' or
+        os.getenv('VERCEL_ENV') == 'production'
+    )
     environment = 'production' if is_production else 'development'
+    logger.info(f"🌍 Detected environment: {environment} (VERCEL={os.getenv('VERCEL')}, NODE_ENV={os.getenv('NODE_ENV')}, VERCEL_ENV={os.getenv('VERCEL_ENV')})")
     
     # First priority: JSON configuration files
     config_dir = Path(__file__).parent.parent / "config"
     json_config_file = config_dir / f"websites_{environment}.json"
     
     # Try environment-specific JSON file first
+    logger.info(f"📁 Looking for JSON config: {json_config_file}")
     if json_config_file.exists():
         try:
             with open(json_config_file, 'r', encoding='utf-8') as file:
@@ -260,10 +266,30 @@ def load_websites_config():
         return False
 
 def get_website_config(website_url: str) -> Optional[WebsiteConfig]:
-    """Get website configuration by URL"""
+    """Get website configuration by URL with intelligent matching"""
+    if not website_url:
+        return None
+    
+    # First try exact match
     for config in websites_config:
         if config.website_url == website_url:
             return config
+    
+    # Then try root domain matching
+    try:
+        from urllib.parse import urlparse
+        input_domain = urlparse(website_url.lower()).netloc.replace('www.', '')
+        
+        for config in websites_config:
+            config_domain = urlparse(config.website_url.lower()).netloc.replace('www.', '')
+            if input_domain == config_domain:
+                logger.info(f"🔗 URL matched via domain: {website_url} -> {config.website_url}")
+                return config
+    except Exception as e:
+        logger.warning(f"⚠️ Error in URL matching for {website_url}: {e}")
+    
+    logger.warning(f"❌ No website configuration found for: {website_url}")
+    return None
     return None
 
 def save_websites_config():
