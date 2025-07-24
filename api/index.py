@@ -29,6 +29,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://linkbuilding-kohl.vercel.app",  # Specifieke frontend URL
+        "https://linkbuilding-api.vercel.app",   # API URL zelf
         "https://*.vercel.app",  # All Vercel apps
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",  # Alternative dev server
