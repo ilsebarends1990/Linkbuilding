@@ -1,6 +1,7 @@
 import { Outlet, useLocation, Link } from 'react-router-dom'
 import { Link as LinkIcon, FileText, Globe, Settings } from 'lucide-react'
 import { Toaster } from '@/components/ui/toaster'
+import ConfigInfo from '@/components/ConfigInfo'
 
 const navigation = [
   {
@@ -61,6 +62,11 @@ export default function SidebarLayout() {
             )
           })}
         </nav>
+
+        {/* Configuration Info */}
+        <div className="px-4 py-2">
+          <ConfigInfo />
+        </div>
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-700">

@@ -95,6 +95,13 @@ class LinkResponse(BaseModel):
 class WebsiteListResponse(BaseModel):
     websites: List[Dict[str, Any]]
 
+class ConfigInfoResponse(BaseModel):
+    config_source: str
+    total_websites: int
+    environment_available: bool
+    csv_file_available: bool
+    loaded_at: str
+
 class WebsiteRequest(BaseModel):
     website_url: str
     site_name: str
@@ -118,14 +125,41 @@ class WebsiteResponse(BaseModel):
 
 # Global variable to store website configs
 websites_config: List[WebsiteConfig] = []
+config_source: str = "unknown"  # Track where config was loaded from
+config_loaded_at: str = ""  # Track when config was loaded
 
 def load_websites_config():
-    """Load website configuration from CSV file"""
-    global websites_config
-    config_file = Path(__file__).parent.parent / "websites_config.csv"
+    """Load website configuration from environment variables or CSV file"""
+    global websites_config, config_source, config_loaded_at
+    websites_config = []
+    config_loaded_at = datetime.now().isoformat()
     
+    # First try to load from environment variables (for production)
+    env_config = os.getenv('WEBSITES_CONFIG')
+    if env_config:
+        try:
+            websites_data = json.loads(env_config)
+            for website_data in websites_data:
+                websites_config.append(WebsiteConfig(
+                    website_url=website_data['website_url'],
+                    page_id=website_data['page_id'],
+                    username=website_data['username'],
+                    app_password=website_data['app_password'],
+                    site_name=website_data['site_name']
+                ))
+            config_source = "environment_variables"
+            logger.info(f"✅ {len(websites_config)} websites loaded from environment variables")
+            return True
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Error parsing WEBSITES_CONFIG environment variable: {e}")
+        except KeyError as e:
+            logger.error(f"❌ Missing required field in WEBSITES_CONFIG: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error loading from environment variables: {e}")
+    
+    # Fallback to CSV file (for development)
+    config_file = Path(__file__).parent.parent / "websites_config.csv"
     try:
-        websites_config = []
         with open(config_file, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
@@ -137,12 +171,15 @@ def load_websites_config():
                         app_password=row['app_password'].strip(),
                         site_name=row['site_name'].strip()
                     ))
-        logger.info(f"✅ {len(websites_config)} websites loaded from config")
+        config_source = "csv_file"
+        logger.info(f"✅ {len(websites_config)} websites loaded from CSV file")
         return True
     except FileNotFoundError:
-        logger.error(f"❌ Config file {config_file} not found!")
+        config_source = "not_found"
+        logger.error(f"❌ Config file {config_file} not found and no WEBSITES_CONFIG environment variable set!")
         return False
     except Exception as e:
+        config_source = "error"
         logger.error(f"❌ Error loading config: {e}")
         return False
 
@@ -257,15 +294,19 @@ def delete_website_config(website_url: str) -> bool:
     return True
 
 def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str, page_id: Optional[int] = None) -> LinkResponse:
-    """Add a link to a WordPress page"""
+    """Add a link to a WordPress page with detailed logging"""
     try:
         # Use provided page_id or default from config
         target_page_id = page_id or config.page_id
+        
+        logger.debug(f"🔍 Attempting to add link to {config.website_url} (page {target_page_id})")
+        logger.debug(f"🔗 Link: '{anchor_text}' -> {link_url}")
         
         # Build API URL
         api_base = f"{config.website_url.rstrip('/')}/wp-json/wp/v2"
         
         # Step 1: Get existing page content
+        logger.debug(f"📥 Fetching page content from {api_base}/pages/{target_page_id}")
         response = requests.get(
             f"{api_base}/pages/{target_page_id}",
             auth=HTTPBasicAuth(config.username, config.app_password),
@@ -273,14 +314,17 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         )
         
         if response.status_code != 200:
+            error_msg = f"Failed to fetch page: HTTP {response.status_code}"
+            logger.error(f"❌ {error_msg} from {config.website_url}")
             return LinkResponse(
                 success=False,
-                message=f"Failed to fetch page: {response.status_code}",
+                message=error_msg,
                 website_url=config.website_url,
                 page_id=target_page_id
             )
         
         page_data = response.json()
+        logger.debug(f"✅ Successfully fetched page data from {config.website_url}")
         
         # Get existing content (prefer raw over rendered)
         existing_content = page_data.get("content", {}).get("raw")
@@ -289,6 +333,7 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         
         # Step 2: Check if link already exists
         if str(link_url) in existing_content:
+            logger.debug(f"🔄 Link already exists on {config.website_url}")
             return LinkResponse(
                 success=True,
                 message="Link already exists",
@@ -301,6 +346,8 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         new_link = f'<a href="{link_url}">{anchor_text}</a><br>'
         new_content = existing_content + "\n" + new_link
         
+        logger.debug(f"📤 Updating page content on {config.website_url}")
+        
         # Step 4: Update the page
         update_response = requests.post(
             f"{api_base}/pages/{target_page_id}",
@@ -311,6 +358,7 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
         )
         
         if update_response.status_code == 200:
+            logger.debug(f"✅ Successfully updated page on {config.website_url}")
             return LinkResponse(
                 success=True,
                 message="Link successfully added",
@@ -319,24 +367,44 @@ def add_link_to_wordpress(config: WebsiteConfig, anchor_text: str, link_url: str
                 link_added=True
             )
         else:
+            error_msg = f"Failed to update page: HTTP {update_response.status_code}"
+            logger.error(f"❌ {error_msg} on {config.website_url}")
+            try:
+                error_detail = update_response.json()
+                logger.error(f"❌ Error details: {error_detail}")
+            except:
+                pass
             return LinkResponse(
                 success=False,
-                message=f"Failed to update page: {update_response.status_code}",
+                message=error_msg,
                 website_url=config.website_url,
                 page_id=target_page_id
             )
             
     except requests.exceptions.Timeout:
+        error_msg = "Request timeout"
+        logger.error(f"⏰ {error_msg} for {config.website_url}")
         return LinkResponse(
             success=False,
-            message="Request timeout",
+            message=error_msg,
+            website_url=config.website_url,
+            page_id=target_page_id
+        )
+    except requests.exceptions.ConnectionError:
+        error_msg = "Connection error"
+        logger.error(f"🔌 {error_msg} for {config.website_url}")
+        return LinkResponse(
+            success=False,
+            message=error_msg,
             website_url=config.website_url,
             page_id=target_page_id
         )
     except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(f"💥 {error_msg} for {config.website_url}")
         return LinkResponse(
             success=False,
-            message=f"Error: {str(e)}",
+            message=error_msg,
             website_url=config.website_url,
             page_id=target_page_id
         )
@@ -364,12 +432,34 @@ async def get_websites():
     ]
     return WebsiteListResponse(websites=websites)
 
+@app.get("/config-info", response_model=ConfigInfoResponse)
+async def get_config_info():
+    """Get information about the current configuration source"""
+    # Check if environment variable is available
+    env_available = bool(os.getenv('WEBSITES_CONFIG'))
+    
+    # Check if CSV file is available
+    config_file = Path(__file__).parent.parent / "websites_config.csv"
+    csv_available = config_file.exists()
+    
+    return ConfigInfoResponse(
+        config_source=config_source,
+        total_websites=len(websites_config),
+        environment_available=env_available,
+        csv_file_available=csv_available,
+        loaded_at=config_loaded_at
+    )
+
 @app.post("/add-link", response_model=LinkResponse)
 async def add_link(request: LinkRequest):
-    """Add a single link to a WordPress website"""
+    """Add a single link to a WordPress website with logging"""
+    logger.info(f"🔗 Single link request: '{request.anchor_text}' -> {request.link_url} on {request.website_url}")
+    
     config = get_website_config(request.website_url)
     if not config:
-        raise HTTPException(status_code=404, detail="Website configuration not found")
+        error_msg = f"Website configuration not found for {request.website_url}"
+        logger.error(f"❌ {error_msg}")
+        raise HTTPException(status_code=404, detail=error_msg)
     
     result = add_link_to_wordpress(
         config=config,
@@ -378,34 +468,83 @@ async def add_link(request: LinkRequest):
         page_id=request.page_id
     )
     
-    if not result.success:
+    if result.success:
+        if result.link_added:
+            logger.info(f"✅ Successfully added single link to {request.website_url}")
+        else:
+            logger.info(f"🔄 Link already exists on {request.website_url}")
+    else:
+        logger.error(f"❌ Failed to add single link to {request.website_url}: {result.message}")
         raise HTTPException(status_code=400, detail=result.message)
     
     return result
 
 @app.post("/add-bulk-links", response_model=List[LinkResponse])
 async def add_bulk_links(request: BulkLinkRequest):
-    """Add the same link to multiple WordPress websites"""
+    """Add the same link to multiple WordPress websites with comprehensive logging"""
     results = []
+    successful_count = 0
+    failed_count = 0
     
-    for website_url in request.website_urls:
+    logger.info(f"🚀 Starting bulk link operation for {len(request.website_urls)} websites")
+    logger.info(f"🔗 Link details: '{request.anchor_text}' -> {request.link_url}")
+    
+    for i, website_url in enumerate(request.website_urls, 1):
+        logger.info(f"📝 Processing website {i}/{len(request.website_urls)}: {website_url}")
+        
         config = get_website_config(website_url)
         if not config:
+            error_msg = f"Website configuration not found for {website_url}"
+            logger.error(f"❌ {error_msg}")
             results.append(LinkResponse(
                 success=False,
-                message="Website configuration not found",
+                message=error_msg,
                 website_url=website_url,
                 page_id=request.page_id or 0
             ))
+            failed_count += 1
             continue
         
-        result = add_link_to_wordpress(
-            config=config,
-            anchor_text=request.anchor_text,
-            link_url=str(request.link_url),
-            page_id=request.page_id
-        )
-        results.append(result)
+        try:
+            result = add_link_to_wordpress(
+                config=config,
+                anchor_text=request.anchor_text,
+                link_url=str(request.link_url),
+                page_id=request.page_id
+            )
+            
+            if result.success:
+                if result.link_added:
+                    logger.info(f"✅ Successfully added link to {website_url} (page {result.page_id})")
+                    successful_count += 1
+                else:
+                    logger.info(f"🔄 Link already exists on {website_url} (page {result.page_id})")
+                    successful_count += 1
+            else:
+                logger.error(f"❌ Failed to add link to {website_url}: {result.message}")
+                failed_count += 1
+            
+            results.append(result)
+            
+        except Exception as e:
+            error_msg = f"Unexpected error processing {website_url}: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            results.append(LinkResponse(
+                success=False,
+                message=error_msg,
+                website_url=website_url,
+                page_id=request.page_id or config.page_id
+            ))
+            failed_count += 1
+    
+    # Summary logging
+    logger.info(f"🏁 Bulk link operation completed:")
+    logger.info(f"  ✅ Successful: {successful_count}/{len(request.website_urls)}")
+    logger.info(f"  ❌ Failed: {failed_count}/{len(request.website_urls)}")
+    
+    if failed_count > 0:
+        failed_sites = [r.website_url for r in results if not r.success]
+        logger.warning(f"⚠️ Failed websites: {', '.join(failed_sites)}")
     
     return results
 

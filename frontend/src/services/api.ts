@@ -59,6 +59,14 @@ export interface WebsiteListResponse {
   websites: Website[];
 }
 
+export interface ConfigInfoResponse {
+  config_source: string;
+  total_websites: number;
+  environment_available: boolean;
+  csv_file_available: boolean;
+  loaded_at: string;
+}
+
 export interface BlogPost {
   id?: number;
   title: string;
@@ -116,6 +124,10 @@ export const api = {
   async getWebsites(): Promise<Website[]> {
     const response = await fetchApi<WebsiteListResponse>('/websites');
     return response.websites;
+  },
+
+  async getConfigInfo(): Promise<ConfigInfoResponse> {
+    return fetchApi<ConfigInfoResponse>('/config-info');
   },
 
   async addWebsite(request: WebsiteRequest): Promise<WebsiteResponse> {
