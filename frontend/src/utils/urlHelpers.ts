@@ -1,47 +1,41 @@
 import { Website } from '@/services/api';
 
 /**
+ * Extraheert de root domain van een URL (zonder www, subdomeinen, paden, etc.)
+ */
+function extractRootDomain(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    let hostname = urlObj.hostname.toLowerCase();
+    
+    // Verwijder www. prefix
+    hostname = hostname.replace(/^www\./, '');
+    
+    // Voor eenvoudige matching gebruiken we de volledige hostname
+    // In de toekomst kunnen we hier meer geavanceerde domain extractie toevoegen
+    return hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Detecteert automatisch de juiste website configuratie op basis van een URL
+ * Gebruikt root domain matching voor betere koppeling tussen Source URLs en website configuraties
  */
 export function detectWebsiteFromUrl(url: string, websites: Website[]): Website | null {
   if (!url || websites.length === 0) return null;
 
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.toLowerCase();
+  const inputRootDomain = extractRootDomain(url);
+  if (!inputRootDomain) return null;
 
-    // Zoek naar exacte hostname match
-    const exactMatch = websites.find(site => {
-      try {
-        const siteUrl = new URL(site.website_url);
-        return siteUrl.hostname.toLowerCase() === hostname;
-      } catch {
-        return false;
-      }
-    });
+  // Zoek naar exacte root domain match
+  const match = websites.find(site => {
+    const siteRootDomain = extractRootDomain(site.website_url);
+    return siteRootDomain === inputRootDomain;
+  });
 
-    if (exactMatch) return exactMatch;
-
-    // Zoek naar subdomain match (bijv. www.example.com matcht met example.com)
-    const domainMatch = websites.find(site => {
-      try {
-        const siteUrl = new URL(site.website_url);
-        const siteHostname = siteUrl.hostname.toLowerCase();
-        
-        // Verwijder www. prefix voor vergelijking
-        const cleanHostname = hostname.replace(/^www\./, '');
-        const cleanSiteHostname = siteHostname.replace(/^www\./, '');
-        
-        return cleanHostname === cleanSiteHostname;
-      } catch {
-        return false;
-      }
-    });
-
-    return domainMatch || null;
-  } catch {
-    return null;
-  }
+  return match || null;
 }
 
 /**
@@ -91,6 +85,27 @@ export function isValidUrl(url: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Normaliseert een URL naar de root domain voor consistente matching
+ * Bijvoorbeeld: https://www.example.com/page/123 -> https://example.com
+ */
+export function normalizeToRootDomain(url: string): string {
+  if (!url) return url;
+  
+  try {
+    const urlObj = new URL(normalizeUrl(url));
+    let hostname = urlObj.hostname.toLowerCase();
+    
+    // Verwijder www. prefix
+    hostname = hostname.replace(/^www\./, '');
+    
+    // Retourneer alleen protocol + hostname (root domain)
+    return `${urlObj.protocol}//${hostname}`;
+  } catch {
+    return url; // Retourneer originele URL als parsing faalt
   }
 }
 

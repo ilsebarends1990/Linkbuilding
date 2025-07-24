@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress'
 import { CheckCircle, XCircle, Loader2, Upload, Activity, AlertCircle } from 'lucide-react'
 import { useWebsites, useHealthCheck } from '@/hooks/useApi'
 import { LineNumberedTextarea } from '@/components/LineNumberedTextarea'
-import { detectWebsiteFromUrl, detectPageIdFromUrl, isValidUrl } from '@/utils/urlHelpers'
+import { detectWebsiteFromUrl, detectPageIdFromUrl, isValidUrl, normalizeToRootDomain } from '@/utils/urlHelpers'
 import { useToast } from '@/hooks/use-toast'
 
 interface FormData {
@@ -79,37 +79,49 @@ export default function LinkManager() {
 
       if (!isValidUrl(sourceUrl) || !isValidUrl(targetUrl) || !anchorText) {
         invalidCount++;
+        console.warn(`Invalid data at line ${i + 1}: sourceUrl=${sourceUrl}, targetUrl=${targetUrl}, anchorText=${anchorText}`);
         continue;
       }
 
+      // Gebruik verbeterde URL matching met root domain normalisatie
       const matchingWebsite = detectWebsiteFromUrl(sourceUrl, websites);
       const detectedPageId = detectPageIdFromUrl(sourceUrl);
 
       if (matchingWebsite) {
+        // Normaliseer de source URL naar root domain voor consistentie
+        const normalizedSourceUrl = normalizeToRootDomain(sourceUrl);
+        
         parsed.push({
-          sourceUrl,
+          sourceUrl: normalizedSourceUrl,
           anchorText,
           targetUrl,
-          website: matchingWebsite?.website_url,
-          pageId: detectedPageId || matchingWebsite?.page_id.toString() || '49',
+          website: matchingWebsite.website_url,
+          pageId: detectedPageId || matchingWebsite.page_id.toString() || '49',
         });
         validCount++;
+        console.log(`✅ Matched line ${i + 1}: ${normalizedSourceUrl} -> ${matchingWebsite.site_name}`);
+      } else {
+        invalidCount++;
+        console.warn(`❌ No website match found for line ${i + 1}: ${sourceUrl}`);
       }
     }
 
     setParsedLinks(parsed);
     
-    // Toast feedback
+    // Toast feedback met specifieke informatie
     if (validCount > 0) {
+      const matchedWebsites = [...new Set(parsed.map(link => link.website))];
       toast({
-        title: "Data geparsed",
-        description: `${validCount} geldige links gevonden${invalidCount > 0 ? `, ${invalidCount} ongeldige overgeslagen` : ''}`,
+        title: "Data succesvol geparsed",
+        description: `${validCount} geldige links gevonden voor ${matchedWebsites.length} website(s)${invalidCount > 0 ? `. ${invalidCount} ongeldige regels overgeslagen` : ''}`,
         variant: "success"
       });
     } else {
       toast({
-        title: "Geen geldige data",
-        description: "Controleer of alle velden correct zijn ingevuld en URLs geldig zijn",
+        title: "Geen geldige links gevonden",
+        description: invalidCount > 0 
+          ? `${invalidCount} regels konden niet gematcht worden met websites. Controleer of de Source URLs overeenkomen met geconfigureerde websites.`
+          : "Controleer of alle velden correct zijn ingevuld en URLs geldig zijn",
         variant: "destructive"
       });
     }
@@ -223,7 +235,7 @@ export default function LinkManager() {
             Bulk Import
           </CardTitle>
           <CardDescription>
-            Importeer meerdere links tegelijk uit gestructureerde data
+            Importeer meerdere links tegelijk. Source URLs worden automatisch gematcht met geconfigureerde websites op basis van root domain.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -233,7 +245,7 @@ export default function LinkManager() {
               <LineNumberedTextarea
                 value={formData.importSourceUrls}
                 onChange={(e) => setFormData(prev => ({ ...prev, importSourceUrls: e.target.value }))}
-                placeholder="https://website1.com/page1&#10;https://website2.com/page2"
+                placeholder="https://www.allincv.nl/pagina1&#10;https://aluminiumbedrijf.nl/contact&#10;https://www.am-team.nl/diensten"
                 className="min-h-[200px]"
               />
             </div>

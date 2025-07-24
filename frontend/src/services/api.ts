@@ -1,5 +1,9 @@
 // Zorg ervoor dat de API URL geen trailing slash bevat
+// Gebruik localhost:8000 als standaard voor lokale development
 const API_BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : 'http://localhost:8000';
+
+// Log de gebruikte API URL voor debugging
+console.log('🔗 API Base URL:', API_BASE_URL);
 
 export interface Website {
   website_url: string;
