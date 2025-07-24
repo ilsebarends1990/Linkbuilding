@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, Website, WebsiteRequest, UpdateWebsiteRequest, LinkRequest, BulkLinkRequest, BlogCreateRequest, BlogUpdateRequest, ApiError } from '@/services/api';
+import { api, WebsiteRequest, UpdateWebsiteRequest, LinkRequest, BulkLinkRequest, BlogCreateRequest, BlogUpdateRequest } from '@/services/api';
 
 // Query keys
 export const queryKeys = {
