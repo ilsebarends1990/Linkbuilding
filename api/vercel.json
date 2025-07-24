@@ -9,8 +9,5 @@
   },
   "routes": [
     { "src": "/(.*)", "dest": "/index.py" }
-  ],
-  "env": {
-    "WEBSITES_CONFIG": "@websites_config"
-  }
+  ]
 }
