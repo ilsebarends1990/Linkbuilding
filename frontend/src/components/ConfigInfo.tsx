@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/services/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { CheckCircle, XCircle, Server, FileText, Clock } from 'lucide-react'
+import { CheckCircle, XCircle, Server, FileText, Clock, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
 
 export default function ConfigInfo() {
+  const [showMissingIds, setShowMissingIds] = useState(false);
   const { data: configInfo, isLoading, error } = useQuery({
     queryKey: ['config-info'],
     queryFn: api.getConfigInfo,
@@ -92,13 +94,50 @@ export default function ConfigInfo() {
           <span className="text-sm font-mono">{configInfo.total_websites}</span>
         </div>
 
+        {configInfo.missing_page_ids > 0 && (
+          <div className="flex flex-col space-y-2 bg-amber-50 p-2 rounded-md border border-amber-200">
+            <div 
+              className="flex items-center justify-between cursor-pointer" 
+              onClick={() => setShowMissingIds(!showMissingIds)}
+            >
+              <span className="text-sm font-medium flex items-center text-amber-700">
+                <AlertTriangle className="mr-1 h-4 w-4 text-amber-500" />
+                Missing Page IDs:
+              </span>
+              <span className="text-sm font-mono text-amber-700">{configInfo.missing_page_ids}</span>
+            </div>
+            
+            {showMissingIds && configInfo.websites_with_missing_ids && (
+              <div className="text-xs text-amber-700 bg-amber-100 p-2 rounded max-h-32 overflow-y-auto">
+                <ul className="list-disc pl-4 space-y-1">
+                  {configInfo.websites_with_missing_ids.map((url, index) => (
+                    <li key={index}>{url}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground flex items-center">
               <Server className="mr-1 h-3 w-3" />
-              Environment
+              Environment JSON
             </span>
             {configInfo.environment_available ? (
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-500" />
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground flex items-center">
+              <Server className="mr-1 h-3 w-3" />
+              Environment Base64
+            </span>
+            {configInfo.environment_base64_available ? (
               <CheckCircle className="h-4 w-4 text-green-500" />
             ) : (
               <XCircle className="h-4 w-4 text-red-500" />

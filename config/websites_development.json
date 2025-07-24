@@ -1,0 +1,16 @@
+[
+  {
+    "website_url": "https://www.allincv.nl",
+    "page_id": 49,
+    "username": "admin",
+    "app_password": "XXEaNPwdaX4T7MblMyC7d5Q0",
+    "site_name": "www.allincv.nl"
+  },
+  {
+    "website_url": "https://test-site.local",
+    "page_id": 1,
+    "username": "admin",
+    "app_password": "test-password",
+    "site_name": "Test Site"
+  }
+]

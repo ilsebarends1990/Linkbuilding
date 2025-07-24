@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import SidebarLayout from './layouts/SidebarLayout'
 import LinkManager from './modules/linkmanager/LinkManager'
-import BlogManager from './modules/blogmanager/BlogManager'
 import WebsiteManager from './modules/websites/WebsiteManager'
 
 const queryClient = new QueryClient({
@@ -21,7 +20,6 @@ function App() {
         <Routes>
           <Route element={<SidebarLayout />}>
             <Route path="/links" element={<LinkManager />} />
-            <Route path="/blogs" element={<BlogManager />} />
             <Route path="/websites" element={<WebsiteManager />} />
             <Route index element={<Navigate to="/links" replace />} />
           </Route>

@@ -63,8 +63,11 @@ export interface ConfigInfoResponse {
   config_source: string;
   total_websites: number;
   environment_available: boolean;
+  environment_base64_available: boolean;
   csv_file_available: boolean;
   loaded_at: string;
+  missing_page_ids: number;
+  websites_with_missing_ids?: string[];
 }
 
 export interface BlogPost {

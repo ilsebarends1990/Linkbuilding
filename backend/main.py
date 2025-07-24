@@ -10,6 +10,7 @@ import json
 import logging
 from datetime import datetime
 import os
+import base64
 from pathlib import Path
 
 # Setup logging
@@ -54,30 +55,7 @@ class BulkLinkRequest(BaseModel):
     website_urls: List[str]
     page_id: Optional[int] = None
 
-class BlogPost(BaseModel):
-    id: Optional[int] = None
-    title: str
-    slug: str
-    content: str
-    excerpt: Optional[str] = None
-    status: str = "draft"  # draft or publish
-    categories: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-    featured_image: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
 
-class BlogCreateRequest(BaseModel):
-    title: str
-    content: str
-    excerpt: Optional[str] = None
-    status: str = "draft"
-    categories: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-    website_url: str
-
-class BlogUpdateRequest(BlogCreateRequest):
-    id: int
 
 class BulkLinkRequest(BaseModel):
     anchor_text: str
@@ -99,8 +77,11 @@ class ConfigInfoResponse(BaseModel):
     config_source: str
     total_websites: int
     environment_available: bool
+    environment_base64_available: bool
     csv_file_available: bool
     loaded_at: str
+    missing_page_ids: int
+    websites_with_missing_ids: Optional[List[str]] = None
 
 class WebsiteRequest(BaseModel):
     website_url: str
@@ -129,17 +110,100 @@ config_source: str = "unknown"  # Track where config was loaded from
 config_loaded_at: str = ""  # Track when config was loaded
 
 def load_websites_config():
-    """Load website configuration from environment variables or CSV file"""
+    """Load website configuration from JSON files, environment variables, or CSV file"""
     global websites_config, config_source, config_loaded_at
     websites_config = []
     config_loaded_at = datetime.now().isoformat()
     
-    # First try to load from environment variables (for production)
+    # Detect environment (production if running on Vercel, development otherwise)
+    is_production = os.getenv('VERCEL') == '1' or os.getenv('NODE_ENV') == 'production'
+    environment = 'production' if is_production else 'development'
+    
+    # First priority: JSON configuration files
+    config_dir = Path(__file__).parent.parent / "config"
+    json_config_file = config_dir / f"websites_{environment}.json"
+    
+    # Try environment-specific JSON file first
+    if json_config_file.exists():
+        try:
+            with open(json_config_file, 'r', encoding='utf-8') as file:
+                websites_data = json.load(file)
+                missing_page_ids = 0
+                for website_data in websites_data:
+                    # Validate page_id
+                    if website_data['page_id'] == 0 or not website_data['page_id']:
+                        missing_page_ids += 1
+                        logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
+                    
+                    websites_config.append(WebsiteConfig(
+                        website_url=website_data['website_url'],
+                        page_id=website_data['page_id'],
+                        username=website_data['username'],
+                        app_password=website_data['app_password'],
+                        site_name=website_data['site_name']
+                    ))
+                config_source = f"json_file_{environment}"
+                logger.info(f"✅ {len(websites_config)} websites loaded from {json_config_file}")
+                if missing_page_ids > 0:
+                    logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Error loading from JSON config file {json_config_file}: {e}")
+    
+    # Fallback to legacy websites_config.json
+    legacy_json_file = Path(__file__).parent.parent / "websites_config.json"
+    if legacy_json_file.exists():
+        try:
+            with open(legacy_json_file, 'r', encoding='utf-8') as file:
+                websites_data = json.load(file)
+                missing_page_ids = 0
+                for website_data in websites_data:
+                    # Validate page_id
+                    if website_data['page_id'] == 0 or not website_data['page_id']:
+                        missing_page_ids += 1
+                        logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
+                    
+                    websites_config.append(WebsiteConfig(
+                        website_url=website_data['website_url'],
+                        page_id=website_data['page_id'],
+                        username=website_data['username'],
+                        app_password=website_data['app_password'],
+                        site_name=website_data['site_name']
+                    ))
+                config_source = "json_file_legacy"
+                logger.info(f"✅ {len(websites_config)} websites loaded from legacy JSON file")
+                if missing_page_ids > 0:
+                    logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Error loading from legacy JSON config file: {e}")
+    
+    # Second priority: Environment variables (for backward compatibility)
+    # Try regular JSON string first
     env_config = os.getenv('WEBSITES_CONFIG')
+    env_source = "environment_variables"
+    
+    # If not found, try base64 encoded version (for larger configs)
+    if not env_config:
+        base64_config = os.getenv('WEBSITES_CONFIG_BASE64')
+        if base64_config:
+            try:
+                env_config = base64.b64decode(base64_config).decode('utf-8')
+                env_source = "environment_variables_base64"
+                logger.info("📦 Using base64 decoded configuration")
+            except Exception as e:
+                logger.error(f"❌ Error decoding base64 configuration: {e}")
+    
     if env_config:
         try:
             websites_data = json.loads(env_config)
+            missing_page_ids = 0
             for website_data in websites_data:
+                # Validate page_id
+                if website_data['page_id'] == 0 or not website_data['page_id']:
+                    missing_page_ids += 1
+                    logger.warning(f"⚠️ Missing page_id for {website_data['website_url']}")
+                
                 websites_config.append(WebsiteConfig(
                     website_url=website_data['website_url'],
                     page_id=website_data['page_id'],
@@ -147,8 +211,10 @@ def load_websites_config():
                     app_password=website_data['app_password'],
                     site_name=website_data['site_name']
                 ))
-            config_source = "environment_variables"
-            logger.info(f"✅ {len(websites_config)} websites loaded from environment variables")
+            config_source = env_source
+            logger.info(f"✅ {len(websites_config)} websites loaded from {env_source}")
+            if missing_page_ids > 0:
+                logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
             return True
         except json.JSONDecodeError as e:
             logger.error(f"❌ Error parsing WEBSITES_CONFIG environment variable: {e}")
@@ -157,26 +223,36 @@ def load_websites_config():
         except Exception as e:
             logger.error(f"❌ Error loading from environment variables: {e}")
     
-    # Fallback to CSV file (for development)
+    # Last fallback: CSV file (for development)
     config_file = Path(__file__).parent.parent / "websites_config.csv"
     try:
         with open(config_file, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
+            missing_page_ids = 0
             for row in reader:
                 if row['website_url'].strip():  # Skip empty rows
+                    page_id = int(row['page_id'])
+                    
+                    # Validate page_id
+                    if page_id == 0:
+                        missing_page_ids += 1
+                        logger.warning(f"⚠️ Missing page_id for {row['website_url'].strip()}")
+                    
                     websites_config.append(WebsiteConfig(
                         website_url=row['website_url'].strip(),
-                        page_id=int(row['page_id']),
+                        page_id=page_id,
                         username=row['username'].strip(),
                         app_password=row['app_password'].strip(),
                         site_name=row['site_name'].strip()
                     ))
         config_source = "csv_file"
         logger.info(f"✅ {len(websites_config)} websites loaded from CSV file")
+        if missing_page_ids > 0:
+            logger.warning(f"⚠️ {missing_page_ids} websites have missing or invalid page_ids")
         return True
     except FileNotFoundError:
         config_source = "not_found"
-        logger.error(f"❌ Config file {config_file} not found and no WEBSITES_CONFIG environment variable set!")
+        logger.error(f"❌ No configuration found! Tried JSON files, environment variables, and CSV file.")
         return False
     except Exception as e:
         config_source = "error"
@@ -191,9 +267,36 @@ def get_website_config(website_url: str) -> Optional[WebsiteConfig]:
     return None
 
 def save_websites_config():
-    """Save website configurations to CSV file"""
+    """Save website configurations to JSON file"""
     try:
-        csv_path = Path("websites_config.csv")
+        # Detect environment
+        is_production = os.getenv('VERCEL') == '1' or os.getenv('NODE_ENV') == 'production'
+        environment = 'production' if is_production else 'development'
+        
+        # Save to environment-specific JSON file
+        config_dir = Path(__file__).parent.parent / "config"
+        config_dir.mkdir(exist_ok=True)  # Create config directory if it doesn't exist
+        json_path = config_dir / f"websites_{environment}.json"
+        
+        # Convert websites_config to JSON-serializable format
+        websites_data = []
+        for config in websites_config:
+            websites_data.append({
+                'website_url': config.website_url,
+                'page_id': config.page_id,
+                'username': config.username,
+                'app_password': config.app_password,
+                'site_name': config.site_name
+            })
+        
+        # Write to JSON file with proper formatting
+        with open(json_path, 'w', encoding='utf-8') as jsonfile:
+            json.dump(websites_data, jsonfile, indent=2, ensure_ascii=False)
+        
+        logger.info(f"✅ Saved {len(websites_config)} website configurations to {json_path}")
+        
+        # Also save CSV backup for compatibility
+        csv_path = Path(__file__).parent.parent / "websites_config.csv"
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['website_url', 'page_id', 'username', 'app_password', 'site_name']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -207,9 +310,10 @@ def save_websites_config():
                     'app_password': config.app_password,
                     'site_name': config.site_name
                 })
-        logger.info(f"Saved {len(websites_config)} website configurations to CSV")
+        logger.info(f"📄 Also saved CSV backup to {csv_path}")
+        
     except Exception as e:
-        logger.error(f"Error saving website configurations: {e}")
+        logger.error(f"❌ Error saving website configurations: {e}")
         raise HTTPException(status_code=500, detail=f"Error saving configurations: {str(e)}")
 
 def add_website_config(request: WebsiteRequest) -> WebsiteConfig:
@@ -435,19 +539,31 @@ async def get_websites():
 @app.get("/config-info", response_model=ConfigInfoResponse)
 async def get_config_info():
     """Get information about the current configuration source"""
-    # Check if environment variable is available
+    # Check if environment variables are available
     env_available = bool(os.getenv('WEBSITES_CONFIG'))
+    env_base64_available = bool(os.getenv('WEBSITES_CONFIG_BASE64'))
     
     # Check if CSV file is available
     config_file = Path(__file__).parent.parent / "websites_config.csv"
     csv_available = config_file.exists()
     
+    # Collect information about missing page_ids
+    websites_with_missing_ids = [config.website_url for config in websites_config if config.page_id == 0]
+    missing_page_ids = len(websites_with_missing_ids)
+    
+    # If there are too many websites with missing IDs, limit the list to avoid response size issues
+    if len(websites_with_missing_ids) > 50:
+        websites_with_missing_ids = websites_with_missing_ids[:50] + [f"... and {len(websites_with_missing_ids) - 50} more"]
+    
     return ConfigInfoResponse(
         config_source=config_source,
         total_websites=len(websites_config),
         environment_available=env_available,
+        environment_base64_available=env_base64_available,
         csv_file_available=csv_available,
-        loaded_at=config_loaded_at
+        loaded_at=config_loaded_at,
+        missing_page_ids=missing_page_ids,
+        websites_with_missing_ids=websites_with_missing_ids if missing_page_ids > 0 else None
     )
 
 @app.post("/add-link", response_model=LinkResponse)
@@ -604,88 +720,7 @@ async def delete_website(website_url: str):
         logger.error(f"Error deleting website: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Blog Management Endpoints
-@app.get("/blogs", response_model=List[BlogPost])
-async def get_blogs(website_url: Optional[str] = None):
-    """Get blog posts, optionally filtered by website"""
-    # This is a placeholder - in a real implementation, you would
-    # fetch from WordPress API or database
-    return []
 
-@app.post("/blogs", response_model=BlogPost)
-async def create_blog(request: BlogCreateRequest):
-    """Create a new blog post"""
-    try:
-        config = get_website_config(request.website_url)
-        if not config:
-            raise HTTPException(status_code=404, detail="Website not found")
-        
-        # This is a placeholder - in a real implementation, you would
-        # create the blog post via WordPress API
-        blog_post = BlogPost(
-            id=1,  # Would be generated by WordPress
-            title=request.title,
-            slug=request.title.lower().replace(' ', '-'),
-            content=request.content,
-            excerpt=request.excerpt,
-            status=request.status,
-            categories=request.categories,
-            tags=request.tags,
-            created_at=datetime.now().isoformat()
-        )
-        
-        logger.info(f"Blog post '{request.title}' created for {request.website_url}")
-        return blog_post
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating blog post: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/blogs/{blog_id}", response_model=BlogPost)
-async def update_blog(blog_id: int, request: BlogUpdateRequest):
-    """Update an existing blog post"""
-    try:
-        config = get_website_config(request.website_url)
-        if not config:
-            raise HTTPException(status_code=404, detail="Website not found")
-        
-        # This is a placeholder - in a real implementation, you would
-        # update the blog post via WordPress API
-        blog_post = BlogPost(
-            id=blog_id,
-            title=request.title,
-            slug=request.title.lower().replace(' ', '-'),
-            content=request.content,
-            excerpt=request.excerpt,
-            status=request.status,
-            categories=request.categories,
-            tags=request.tags,
-            updated_at=datetime.now().isoformat()
-        )
-        
-        logger.info(f"Blog post {blog_id} updated for {request.website_url}")
-        return blog_post
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating blog post: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/blogs/{blog_id}")
-async def delete_blog(blog_id: int):
-    """Delete a blog post"""
-    try:
-        # This is a placeholder - in a real implementation, you would
-        # delete the blog post via WordPress API
-        logger.info(f"Blog post {blog_id} deleted")
-        return {"success": True, "message": f"Blog post {blog_id} deleted successfully"}
-        
-    except Exception as e:
-        logger.error(f"Error deleting blog post: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():

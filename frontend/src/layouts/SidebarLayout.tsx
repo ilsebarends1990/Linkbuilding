@@ -1,5 +1,5 @@
 import { Outlet, useLocation, Link } from 'react-router-dom'
-import { Link as LinkIcon, FileText, Globe, Settings } from 'lucide-react'
+import { Link as LinkIcon, Globe, Settings } from 'lucide-react'
 import { Toaster } from '@/components/ui/toaster'
 import ConfigInfo from '@/components/ConfigInfo'
 
@@ -8,11 +8,6 @@ const navigation = [
     name: 'Link Manager',
     href: '/links',
     icon: LinkIcon,
-  },
-  {
-    name: 'Blog Manager',
-    href: '/blogs',
-    icon: FileText,
   },
   {
     name: 'Websites',

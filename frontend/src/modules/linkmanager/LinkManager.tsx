@@ -1,21 +1,14 @@
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
-import { Plus, CheckCircle, XCircle, Loader2, Upload, Activity, AlertCircle } from 'lucide-react'
-import { useWebsites, useAddLink, useHealthCheck } from '@/hooks/useApi'
+import { CheckCircle, XCircle, Loader2, Upload, Activity, AlertCircle } from 'lucide-react'
+import { useWebsites, useHealthCheck } from '@/hooks/useApi'
 import { LineNumberedTextarea } from '@/components/LineNumberedTextarea'
 import { detectWebsiteFromUrl, detectPageIdFromUrl, isValidUrl } from '@/utils/urlHelpers'
 import { useToast } from '@/hooks/use-toast'
 
 interface FormData {
-  anchorText: string;
-  linkUrl: string;
-  website: string;
-  pageId: string;
-  isImportMode: boolean;
   importSourceUrls: string;
   importAnchorTexts: string;
   importTargetUrls: string;
@@ -44,57 +37,55 @@ interface BatchProgress {
 
 export default function LinkManager() {
   const [formData, setFormData] = useState<FormData>({
-    anchorText: '',
-    linkUrl: '',
-    website: '',
-    pageId: '49',
-    isImportMode: false,
     importSourceUrls: '',
     importAnchorTexts: '',
     importTargetUrls: '',
   });
 
   const [parsedLinks, setParsedLinks] = useState<ParsedLink[]>([]);
-  const [bulkResults, setBulkResults] = useState<BatchResult[]>([]);
+  const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
   const [batchProgress, setBatchProgress] = useState<BatchProgress>({
     total: 0,
     completed: 0,
-    isProcessing: false
+    isProcessing: false,
   });
 
-  const { data: websites = [] } = useWebsites();
-  const addLinkMutation = useAddLink();
+  const { data: websites = [], isLoading: websitesLoading } = useWebsites();
   const { data: healthData, isLoading: healthLoading } = useHealthCheck();
   const { toast } = useToast();
 
   const parseImportData = () => {
-    const sourceUrls = formData.importSourceUrls.split('\n').filter(line => line.trim());
-    const anchorTexts = formData.importAnchorTexts.split('\n').filter(line => line.trim());
-    const targetUrls = formData.importTargetUrls.split('\n').filter(line => line.trim());
+    const sourceUrls = formData.importSourceUrls.split('\n').filter(url => url.trim());
+    const anchorTexts = formData.importAnchorTexts.split('\n').filter(text => text.trim());
+    const targetUrls = formData.importTargetUrls.split('\n').filter(url => url.trim());
 
-    const maxLength = Math.max(sourceUrls.length, anchorTexts.length, targetUrls.length);
+    if (sourceUrls.length !== anchorTexts.length || anchorTexts.length !== targetUrls.length) {
+      toast({
+        title: "Data mismatch",
+        description: "Alle kolommen moeten hetzelfde aantal regels hebben",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const parsed: ParsedLink[] = [];
     let validCount = 0;
     let invalidCount = 0;
 
-    for (let i = 0; i < maxLength; i++) {
-      const sourceUrl = sourceUrls[i]?.trim() || '';
-      const anchorText = anchorTexts[i]?.trim() || '';
-      const targetUrl = targetUrls[i]?.trim() || '';
+    for (let i = 0; i < sourceUrls.length; i++) {
+      const sourceUrl = sourceUrls[i].trim();
+      const anchorText = anchorTexts[i].trim();
+      const targetUrl = targetUrls[i].trim();
 
-      if (sourceUrl && anchorText && targetUrl) {
-        // Validate URLs
-        if (!isValidUrl(sourceUrl) || !isValidUrl(targetUrl)) {
-          invalidCount++;
-          continue;
-        }
+      if (!isValidUrl(sourceUrl) || !isValidUrl(targetUrl) || !anchorText) {
+        invalidCount++;
+        continue;
+      }
 
-        // Automatische website detectie
-        const matchingWebsite = detectWebsiteFromUrl(sourceUrl, websites);
-        
-        // Automatische pagina ID detectie
-        const detectedPageId = detectPageIdFromUrl(sourceUrl);
-        
+      const matchingWebsite = detectWebsiteFromUrl(sourceUrl, websites);
+      const detectedPageId = detectPageIdFromUrl(sourceUrl);
+
+      if (matchingWebsite) {
         parsed.push({
           sourceUrl,
           anchorText,
@@ -124,129 +115,87 @@ export default function LinkManager() {
     }
   };
 
-  const handleSingleLink = async () => {
-    if (!formData.anchorText || !formData.linkUrl || !formData.website) {
-      toast({
-        title: "Incomplete gegevens",
-        description: "Vul alle vereiste velden in",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      await addLinkMutation.mutateAsync({
-        anchor_text: formData.anchorText,
-        link_url: formData.linkUrl,
-        website_url: formData.website,
-        page_id: parseInt(formData.pageId) || undefined,
-      });
-
-      toast({
-        title: "Link toegevoegd",
-        description: `Link "${formData.anchorText}" succesvol toegevoegd`,
-        variant: "success"
-      });
-
-      // Reset form
-      setFormData(prev => ({
-        ...prev,
-        anchorText: '',
-        linkUrl: '',
-      }));
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Onbekende fout';
-      toast({
-        title: "Fout bij toevoegen link",
-        description: errorMessage,
-        variant: "destructive"
-      });
-    }
-  };
-
   const handleBulkLinks = async () => {
-    if (parsedLinks.length === 0) {
-      toast({
-        title: "Geen links om te verwerken",
-        description: "Parse eerst de import data",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const validLinks = parsedLinks.filter(link => link.website);
-    if (validLinks.length === 0) {
-      toast({
-        title: "Geen geldige links",
-        description: "Geen van de links kon worden gekoppeld aan een website",
-        variant: "destructive"
-      });
-      return;
-    }
+    if (parsedLinks.length === 0) return;
 
     setBatchProgress({
-      total: validLinks.length,
+      total: parsedLinks.length,
       completed: 0,
-      isProcessing: true
+      isProcessing: true,
     });
 
     const results: BatchResult[] = [];
-    let successCount = 0;
-    let errorCount = 0;
-    
-    for (let i = 0; i < validLinks.length; i++) {
-      const link = validLinks[i];
+
+    for (let i = 0; i < parsedLinks.length; i++) {
+      const link = parsedLinks[i];
       
       try {
-        const result = await addLinkMutation.mutateAsync({
-          anchor_text: link.anchorText,
-          link_url: link.targetUrl,
-          website_url: link.website!,
-          page_id: parseInt(link.pageId || '49'),
+        const response = await fetch('/api/links/bulk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            anchor_text: link.anchorText,
+            link_url: link.targetUrl,
+            website_urls: [link.website],
+            page_id: parseInt(link.pageId || '49'),
+          }),
         });
+
+        const result = await response.json();
         
-        results.push({ link, success: true, result });
-        successCount++;
+        results.push({
+          link,
+          success: response.ok,
+          result: result,
+          error: response.ok ? undefined : result.detail || 'Unknown error'
+        });
+
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Onbekende fout';
-        results.push({ link, success: false, error: errorMessage });
-        errorCount++;
+        results.push({
+          link,
+          success: false,
+          error: error instanceof Error ? error.message : 'Network error'
+        });
       }
-      
-      // Update progress
+
       setBatchProgress(prev => ({
         ...prev,
-        completed: i + 1
+        completed: i + 1,
       }));
-      
-      // Small delay to prevent overwhelming the server
-      if (i < validLinks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
     }
 
-    setBulkResults(results);
+    setBatchResults(results);
     setBatchProgress(prev => ({ ...prev, isProcessing: false }));
-    
-    // Final toast with summary
+
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.length - successCount;
+
     toast({
-      title: "Bulk verwerking voltooid",
-      description: `${successCount} links succesvol toegevoegd${errorCount > 0 ? `, ${errorCount} fouten` : ''}`,
+      title: "Bulk import voltooid",
+      description: `${successCount} links succesvol toegevoegd${failureCount > 0 ? `, ${failureCount} gefaald` : ''}`,
       variant: successCount > 0 ? "success" : "destructive"
     });
   };
 
+  if (websitesLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-start">
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Link Manager</h1>
           <p className="text-muted-foreground">
-            Beheer links op je WordPress websites
+            Bulk import van links naar WordPress websites
           </p>
         </div>
-        
-        {/* Health Check Status */}
         <div className="flex items-center gap-2 text-sm">
           {healthLoading ? (
             <div className="flex items-center gap-2 text-gray-500">
@@ -267,227 +216,134 @@ export default function LinkManager() {
         </div>
       </div>
 
-      <Tabs defaultValue="single" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="single">Enkele Link</TabsTrigger>
-          <TabsTrigger value="bulk">Bulk Import</TabsTrigger>
-        </TabsList>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Bulk Import
+          </CardTitle>
+          <CardDescription>
+            Importeer meerdere links tegelijk uit gestructureerde data
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source URLs</label>
+              <LineNumberedTextarea
+                value={formData.importSourceUrls}
+                onChange={(e) => setFormData(prev => ({ ...prev, importSourceUrls: e.target.value }))}
+                placeholder="https://website1.com/page1&#10;https://website2.com/page2"
+                className="min-h-[200px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Anchor Texts</label>
+              <LineNumberedTextarea
+                value={formData.importAnchorTexts}
+                onChange={(e) => setFormData(prev => ({ ...prev, importAnchorTexts: e.target.value }))}
+                placeholder="Link tekst 1&#10;Link tekst 2"
+                className="min-h-[200px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Target URLs</label>
+              <LineNumberedTextarea
+                value={formData.importTargetUrls}
+                onChange={(e) => setFormData(prev => ({ ...prev, importTargetUrls: e.target.value }))}
+                placeholder="https://target1.com&#10;https://target2.com"
+                className="min-h-[200px]"
+              />
+            </div>
+          </div>
 
-        <TabsContent value="single" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                Voeg Enkele Link Toe
-              </CardTitle>
-              <CardDescription>
-                Voeg een link toe aan een specifieke WordPress website
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Website</label>
-                  <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={formData.website}
-                    onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
-                  >
-                    <option value="">Selecteer website...</option>
-                    {websites.map((site: any) => (
-                      <option key={site.website_url} value={site.website_url}>
-                        {site.site_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Pagina ID</label>
-                  <Input
-                    type="number"
-                    value={formData.pageId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, pageId: e.target.value }))}
-                    placeholder="49"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Anchor Text</label>
-                <Input
-                  value={formData.anchorText}
-                  onChange={(e) => setFormData(prev => ({ ...prev, anchorText: e.target.value }))}
-                  placeholder="Bijv. 'Klik hier voor meer info'"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Link URL</label>
-                <Input
-                  type="url"
-                  value={formData.linkUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, linkUrl: e.target.value }))}
-                  placeholder="https://example.com"
-                />
-              </div>
-
-              <Button 
-                onClick={handleSingleLink}
-                disabled={addLinkMutation.isPending || !formData.anchorText || !formData.linkUrl || !formData.website}
-                className="w-full"
-              >
-                {addLinkMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Link Toevoegen...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Voeg Link Toe
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="bulk" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Bulk Import
-              </CardTitle>
-              <CardDescription>
-                Importeer meerdere links tegelijk uit gestructureerde data
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Source URLs</label>
-                  <LineNumberedTextarea
-                    value={formData.importSourceUrls}
-                    onChange={(e) => setFormData(prev => ({ ...prev, importSourceUrls: e.target.value }))}
-                    placeholder="https://website1.com/page1&#10;https://website2.com/page2"
-                    className="min-h-[200px]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Anchor Texts</label>
-                  <LineNumberedTextarea
-                    value={formData.importAnchorTexts}
-                    onChange={(e) => setFormData(prev => ({ ...prev, importAnchorTexts: e.target.value }))}
-                    placeholder="Link tekst 1&#10;Link tekst 2"
-                    className="min-h-[200px]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Target URLs</label>
-                  <LineNumberedTextarea
-                    value={formData.importTargetUrls}
-                    onChange={(e) => setFormData(prev => ({ ...prev, importTargetUrls: e.target.value }))}
-                    placeholder="https://target1.com&#10;https://target2.com"
-                    className="min-h-[200px]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button onClick={parseImportData} variant="outline">
-                  Parse Data
-                </Button>
-                <Button 
-                  onClick={handleBulkLinks}
-                  disabled={parsedLinks.length === 0 || batchProgress.isProcessing}
-                >
-                  {batchProgress.isProcessing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Verwerken... ({batchProgress.completed}/{batchProgress.total})
-                    </>
-                  ) : (
-                    `Voeg ${parsedLinks.length} Links Toe`
-                  )}
-                </Button>
-              </div>
-
-              {/* Progress Bar */}
-              {batchProgress.isProcessing && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Verwerken...</span>
-                    <span>{batchProgress.completed}/{batchProgress.total}</span>
-                  </div>
-                  <Progress value={(batchProgress.completed / batchProgress.total) * 100} />
-                </div>
+          <div className="flex gap-2">
+            <Button onClick={parseImportData} variant="outline">
+              Parse Data
+            </Button>
+            <Button 
+              onClick={handleBulkLinks}
+              disabled={parsedLinks.length === 0 || batchProgress.isProcessing}
+            >
+              {batchProgress.isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Verwerken... ({batchProgress.completed}/{batchProgress.total})
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Start Bulk Import ({parsedLinks.length} links)
+                </>
               )}
+            </Button>
+          </div>
 
-              {parsedLinks.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="font-medium">Geparsede Links ({parsedLinks.length})</h3>
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {parsedLinks.map((link, index) => (
-                      <div key={index} className="p-3 border rounded-lg text-sm">
-                        <div className="font-medium">{link.anchorText}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {link.sourceUrl} → {link.targetUrl}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          {link.website ? (
-                            <span className="text-green-600 text-xs flex items-center gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              {websites.find(w => w.website_url === link.website)?.site_name || link.website}
-                            </span>
-                          ) : (
-                            <span className="text-red-600 text-xs flex items-center gap-1">
-                              <XCircle className="h-3 w-3" />
-                              Geen website gevonden
-                            </span>
-                          )}
-                          <span className="text-gray-500 text-xs">Pagina ID: {link.pageId}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {batchProgress.isProcessing && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Voortgang</span>
+                <span>{batchProgress.completed}/{batchProgress.total}</span>
+              </div>
+              <Progress value={(batchProgress.completed / batchProgress.total) * 100} />
+            </div>
+          )}
 
-              {bulkResults.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-medium">Resultaten</h3>
-                    <div className="text-sm text-muted-foreground">
-                      {bulkResults.filter(r => r.success).length} succesvol, {bulkResults.filter(r => !r.success).length} fouten
+          {parsedLinks.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Geparsde Links ({parsedLinks.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {parsedLinks.slice(0, 10).map((link, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm p-2 bg-gray-50 rounded">
+                      <span className="font-medium">{link.anchorText}</span>
+                      <span className="text-gray-500">→</span>
+                      <span className="text-blue-600">{link.targetUrl}</span>
+                      <span className="text-gray-500">op</span>
+                      <span className="text-green-600">{link.website}</span>
                     </div>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {bulkResults.map((result, index) => (
-                      <div key={index} className="p-3 border rounded-lg text-sm flex items-start gap-2">
-                        {result.success ? (
-                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{result.link.anchorText}</div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {result.link.targetUrl}
-                          </div>
-                          <div className={`text-xs mt-1 ${result.success ? 'text-green-600' : 'text-red-600'}`}>
-                            {result.success ? 'Succesvol toegevoegd' : result.error}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  ))}
+                  {parsedLinks.length > 10 && (
+                    <div className="text-sm text-gray-500 text-center">
+                      ... en {parsedLinks.length - 10} meer
+                    </div>
+                  )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              </CardContent>
+            </Card>
+          )}
+
+          {batchResults.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Resultaten</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {batchResults.map((result, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm p-2 rounded" 
+                         style={{ backgroundColor: result.success ? '#f0f9ff' : '#fef2f2' }}>
+                      {result.success ? (
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500" />
+                      )}
+                      <span className="font-medium">{result.link.anchorText}</span>
+                      <span className="text-gray-500">→</span>
+                      <span className="text-blue-600">{result.link.targetUrl}</span>
+                      {result.error && (
+                        <span className="text-red-600 text-xs">({result.error})</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
