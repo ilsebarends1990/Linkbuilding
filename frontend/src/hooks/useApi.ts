@@ -110,6 +110,10 @@ export function useHealthCheck() {
   return useQuery({
     queryKey: queryKeys.health,
     queryFn: api.healthCheck,
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 10000, // Refetch every 10 seconds
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    retry: 3,
+    staleTime: 5000, // Data is stale after 5 seconds
   });
 }
